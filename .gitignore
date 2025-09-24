@@ -1,0 +1,33 @@
+# Trivy scan results (unless needed for testing)
+*.sarif
+*.json
+trivy-results*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Log files
+*.log
+
+# Node modules (if any JS tooling is added later)
+node_modules/
+
+# Coverage reports
+coverage/
+*.coverage
+
+# Build artifacts
+dist/
+build/
