@@ -1,0 +1,94 @@
+name: 'Trivy Image Scanner'
+description: 'Scan Docker images for vulnerabilities using Trivy and publish results'
+author: 'IQGeo DevOps Team'
+
+inputs:
+  image:
+    description: 'Docker image to scan (e.g., nginx:latest or registry.com/image:tag)'
+    required: true
+  
+  format:
+    description: 'Output format for Trivy scan (table, json, sarif, cyclonedx, spdx, spdx-json, github)'
+    required: false
+    default: 'sarif'
+  
+  output:
+    description: 'Output file path for scan results'
+    required: false
+    default: 'trivy-results.sarif'
+  
+  severity:
+    description: 'Severities of vulnerabilities to be displayed (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL)'
+    required: false
+    default: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+  
+  exit-code:
+    description: 'Exit code when vulnerabilities were found'
+    required: false
+    default: '0'
+  
+  ignore-unfixed:
+    description: 'Display only fixed vulnerabilities'
+    required: false
+    default: 'false'
+  
+  timeout:
+    description: 'Timeout for image scan'
+    required: false
+    default: '5m0s'
+
+outputs:
+  results:
+    description: 'Path to the scan results file'
+    value: ${{ steps.scan.outputs.results }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Trivy
+      shell: bash
+      run: |
+        echo "Installing Trivy..."
+        sudo apt-get update
+        sudo apt-get install wget apt-transport-https gnupg lsb-release -y
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy -y
+        trivy --version
+
+    - name: Run Trivy vulnerability scanner
+      id: scan
+      shell: bash
+      run: |
+        echo "Scanning image: ${{ inputs.image }}"
+        
+        # Create output directory if it doesn't exist
+        OUTPUT_DIR=$(dirname "${{ inputs.output }}")
+        mkdir -p "$OUTPUT_DIR"
+        
+        # Run Trivy scan
+        trivy image \
+          --format ${{ inputs.format }} \
+          --output ${{ inputs.output }} \
+          --severity ${{ inputs.severity }} \
+          --exit-code ${{ inputs.exit-code }} \
+          --timeout ${{ inputs.timeout }} \
+          ${{ inputs.ignore-unfixed == 'true' && '--ignore-unfixed' || '' }} \
+          ${{ inputs.image }}
+        
+        # Set output
+        echo "results=${{ inputs.output }}" >> $GITHUB_OUTPUT
+        
+        echo "Trivy scan completed. Results saved to: ${{ inputs.output }}"
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: inputs.format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: 'trivy'
+
+branding:
+  icon: 'shield'
+  color: 'blue'

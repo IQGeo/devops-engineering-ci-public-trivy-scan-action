@@ -1,0 +1,96 @@
+name: Test Trivy Action
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-action:
+    name: Test Trivy Scan Action
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        test-case:
+          - name: "Basic SARIF scan"
+            image: "alpine:3.18"
+            format: "sarif"
+            output: "trivy-results.sarif"
+          - name: "JSON format scan"
+            image: "nginx:1.21"
+            format: "json"
+            output: "trivy-results.json"
+          - name: "High/Critical only"
+            image: "ubuntu:20.04"
+            format: "table"
+            severity: "HIGH,CRITICAL"
+            
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Trivy scan - ${{ matrix.test-case.name }}
+        id: trivy-scan
+        uses: ./
+        with:
+          image: ${{ matrix.test-case.image }}
+          format: ${{ matrix.test-case.format }}
+          output: ${{ matrix.test-case.output }}
+          severity: ${{ matrix.test-case.severity || 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL' }}
+          timeout: '3m0s'
+
+      - name: Verify results file exists
+        run: |
+          if [ -f "${{ steps.trivy-scan.outputs.results }}" ]; then
+            echo "✅ Results file exists: ${{ steps.trivy-scan.outputs.results }}"
+            ls -la "${{ steps.trivy-scan.outputs.results }}"
+            
+            # Show first few lines of the results (except for SARIF which might be large)
+            if [[ "${{ matrix.test-case.format }}" != "sarif" ]]; then
+              echo "📄 First 20 lines of results:"
+              head -20 "${{ steps.trivy-scan.outputs.results }}"
+            else
+              echo "📄 SARIF file size:"
+              wc -c "${{ steps.trivy-scan.outputs.results }}"
+            fi
+          else
+            echo "❌ Results file not found: ${{ steps.trivy-scan.outputs.results }}"
+            exit 1
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-test-results-${{ matrix.test-case.name }}-${{ github.run_id }}
+          path: ${{ steps.trivy-scan.outputs.results }}
+          retention-days: 30
+
+  test-failure-mode:
+    name: Test Failure Mode
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test scan with exit code 1 (should fail if vulnerabilities found)
+        id: trivy-fail-test
+        continue-on-error: true
+        uses: ./
+        with:
+          image: 'nginx:1.20'  # Known to have vulnerabilities
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Verify failure handling
+        run: |
+          if [ "${{ steps.trivy-fail-test.outcome }}" == "failure" ]; then
+            echo "✅ Action correctly failed when vulnerabilities were found with exit-code=1"
+          else
+            echo "❌ Action should have failed but didn't"
+            exit 1
+          fi

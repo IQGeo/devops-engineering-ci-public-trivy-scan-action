@@ -1,0 +1,49 @@
+# Example: Strict Security Policy - Fail on Critical/High Vulnerabilities
+
+name: Strict Security Enforcement
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-gate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t secure-app:${{ github.sha }} .
+
+      - name: Critical security scan
+        uses: IQGeo/devops-engineering-ci-public-trivy-scan-action@main
+        with:
+          image: 'secure-app:${{ github.sha }}'
+          format: 'json'
+          output: 'critical-vulnerabilities.json'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'  # Fail the build if vulnerabilities found
+          ignore-unfixed: 'true'
+          timeout: '10m0s'
+
+      - name: Parse and display critical issues
+        if: failure()
+        run: |
+          echo "🚨 Critical or high vulnerabilities found!"
+          if [ -f critical-vulnerabilities.json ]; then
+            # Display summary of critical issues
+            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "- \(.VulnerabilityID): \(.Title) (\(.Severity))"' critical-vulnerabilities.json | head -10
+          fi
+          echo "Please fix these vulnerabilities before proceeding."
+
+      - name: Upload detailed report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-${{ github.sha }}
+          path: critical-vulnerabilities.json

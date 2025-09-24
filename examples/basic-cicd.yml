@@ -1,0 +1,48 @@
+# Example: Basic CI/CD Pipeline with Security Scanning
+
+name: CI/CD with Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t myapp:${{ github.sha }} .
+          docker tag myapp:${{ github.sha }} myapp:latest
+
+      - name: Security scan with Trivy
+        uses: IQGeo/devops-engineering-ci-public-trivy-scan-action@main
+        with:
+          image: 'myapp:${{ github.sha }}'
+          format: 'sarif'
+          output: 'security-results.sarif'
+          severity: 'MEDIUM,HIGH,CRITICAL'
+          exit-code: '0'  # Don't fail the build, just report
+
+      - name: Upload security results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: security-results.sarif
+
+      # Continue with deployment if security scan passes
+      - name: Deploy application
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Deploying application..."
+          # Add deployment steps here
