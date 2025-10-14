@@ -77,4 +77,4 @@ runs:
         with:
           name: trivy-report
           path: '${{ github.workspace }}/trivy-report.txt'
-          retention-days: 1
+          retention-days: 5
