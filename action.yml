@@ -1,16 +1,39 @@
 name: 'Reusable composite action for Trivy vulnerability scanning'
 inputs:
-  tag:
+  image:
+    description: 'Container image to scan'
     required: true
-  module:
-    type: string      
+    type: string
+  severity_threshold:
+    description: 'Vulnerability severity threshold (LOW, MEDIUM, HIGH, CRITICAL)'
+    required: false
+    default: 'MEDIUM,CRITICAL,HIGH'
+    type: string
+  format:
+    description: 'Output format (table, json, template, cyclonedx, spdx-json, spdx-tag-value, github)'
+    required: false
+    default: 'github'
+    type: string
+  output:
+    description: 'Output file name'
+    required: false
+    default: 'scan-results.sbom.json'
+    type: string
   acr:
+    description: 'Azure Container Registry (ACR) URL'
+    required: true
     type: string
   registry_username:
+    description: 'ACR registry username'
+    required: true
     type: string
   registry_password:
+    description: 'ACR registry password'
+    required: true
     type: string
   token:
+    description: 'GitHub token for authentication'
+    required: true
     type: string
 
 
@@ -35,18 +58,18 @@ runs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: '${{ inputs.acr }}/${{ inputs.module }}:${{ inputs.tag }}'
-          format: 'github'
-          output: 'scan-results.sbom.json'
+          image-ref: '${{ inputs.image }}'
+          format: '${{ inputs.format }}'
+          output: '${{ inputs.output }}'
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'MEDIUM,CRITICAL,HIGH'
+          severity: '${{ inputs.severity_threshold }}'
           github-pat: '${{ inputs.token }}'
 
       - name: Upload trivy report as a Github artifact
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-sbom-report
-          path: '${{ github.workspace }}/scan-results.sbom.json'
+          name: trivy-report
+          path: '${{ github.workspace }}/scan-results.json'
           retention-days: 1
