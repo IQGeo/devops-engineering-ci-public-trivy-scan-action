@@ -53,7 +53,7 @@ runs:
 
       - name: Pull image
         shell: bash
-        run: docker pull ${{ inputs.acr }}/${{ inputs.module }}:${{ inputs.tag }}
+        run: docker pull ${{ inputs.image }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
