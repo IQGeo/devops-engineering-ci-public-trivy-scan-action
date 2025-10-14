@@ -59,6 +59,7 @@ runs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: '${{ inputs.image }}'
+          scan-type: image
           format: '${{ inputs.format }}'
           output: '${{ inputs.output }}'
           exit-code: '0'
@@ -71,5 +72,5 @@ runs:
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
-          path: '${{ github.workspace }}/scan-results.json'
+          path: '${{ github.workspace }}/trivy-report.txt'
           retention-days: 1
