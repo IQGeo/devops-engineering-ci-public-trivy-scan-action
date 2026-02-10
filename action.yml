@@ -1,4 +1,5 @@
 name: 'Reusable composite action for Trivy vulnerability scanning'
+description: 'Performs vulnerability scanning on container images using Trivy and uploads the results as an artifact.'
 inputs:
   image:
     description: 'Container image to scan'
@@ -18,10 +19,6 @@ inputs:
     description: 'Output file name'
     required: false
     default: 'scan-results.sbom.json'
-    type: string
-  acr:
-    description: 'Azure Container Registry (ACR) URL'
-    required: true
     type: string
   registry_username:
     description: 'ACR registry username'
@@ -76,5 +73,5 @@ runs:
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
-          path: '${{ github.workspace }}/trivy-report.txt'
+          path: '${{ github.workspace }}/${{ inputs.output }}'
           retention-days: 5
