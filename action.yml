@@ -41,17 +41,6 @@ runs:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@main
 
-      # - name: 'login to ACR'
-      #   uses: azure/docker-login@v1
-      #   with:
-      #     login-server: ${{ inputs.acr }}
-      #     username: ${{ inputs.registry_username }}
-      #     password: ${{ inputs.registry_password }}
-
-      # - name: Pull image
-      #   shell: bash
-      #   run: docker pull ${{ inputs.image }}
-
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
