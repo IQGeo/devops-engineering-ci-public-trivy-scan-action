@@ -15,11 +15,6 @@ inputs:
     required: false
     default: 'github'
     type: string
-  output:
-    description: 'Output file name'
-    required: false
-    default: 'scan-results.sbom.json'
-    type: string
   registry_username:
     description: 'ACR registry username'
     required: true
@@ -47,7 +42,7 @@ runs:
           image-ref: '${{ inputs.image }}'
           scan-type: image
           format: '${{ inputs.format }}'
-          output: '${{ inputs.output }}'
+          output: 'trivy-scan-results.sarif'
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
@@ -62,5 +57,10 @@ runs:
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
-          path: '${{ github.workspace }}/${{ inputs.output }}'
+          path: 'trivy-scan-results.sarif'
           retention-days: 5
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+            sarif_file: 'trivy-scan-results.sarif'
