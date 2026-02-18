@@ -13,7 +13,7 @@ inputs:
   format:
     description: 'Output format (table, json, template, cyclonedx, spdx-json, spdx-tag-value, github)'
     required: false
-    default: 'github'
+    default: 'sarif'
     type: string
   registry_username:
     description: 'ACR registry username'
@@ -41,7 +41,7 @@ runs:
         with:
           image-ref: '${{ inputs.image }}'
           scan-type: image
-          format: '${{ inputs.format }}'
+          format: 'sarif'
           output: 'trivy-scan-results.sarif'
           exit-code: '0'
           ignore-unfixed: true
