@@ -11,9 +11,14 @@ inputs:
     default: 'MEDIUM,CRITICAL,HIGH'
     type: string
   format:
-    description: 'Output format (table, json, template, cyclonedx, spdx-json, spdx-tag-value, github)'
+    description: 'Deprecated / unused. Reports are always produced as JSON, SARIF, and a Markdown job summary.'
     required: false
     default: 'sarif'
+    type: string
+  upload_to_security_tab:
+    description: 'Upload SARIF results to the GitHub Security tab (requires GitHub Advanced Security). Set to "true" to enable.'
+    required: false
+    default: 'false'
     type: string
   registry_username:
     description: 'ACR registry username'
@@ -41,8 +46,8 @@ runs:
         with:
           image-ref: '${{ inputs.image }}'
           scan-type: image
-          format: 'sarif'
-          output: 'trivy-scan-results.sarif'
+          format: 'json'
+          output: 'trivy-scan-results.json'
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
@@ -53,14 +58,89 @@ runs:
           TRIVY_USERNAME: ${{ inputs.registry_username }}
           TRIVY_PASSWORD: ${{ inputs.registry_password }}
 
+      - name: Convert Trivy report to SARIF
+        shell: bash
+        run: |
+          trivy convert \
+            --format sarif \
+            --output trivy-scan-results.sarif \
+            trivy-scan-results.json
+
+      - name: Ensure jq is available
+        shell: bash
+        run: |
+          if command -v jq >/dev/null 2>&1; then
+            echo "jq already installed: $(jq --version)"
+            exit 0
+          fi
+          echo "jq not found; attempting to install..."
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif command -v apk >/dev/null 2>&1; then
+            sudo apk add --no-cache jq || apk add --no-cache jq
+          elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y jq
+          elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y jq
+          elif command -v brew >/dev/null 2>&1; then
+            brew install jq
+          else
+            echo "::error::jq is required for the job summary but no supported package manager was found to install it." >&2
+            exit 1
+          fi
+          echo "jq installed: $(jq --version)"
+
+      - name: Render Trivy results to the job summary
+        shell: bash
+        run: |
+          report=trivy-scan-results.json
+          total=$(jq '[.Results[]?.Vulnerabilities // [] | length] | add // 0' "$report")
+          {
+            echo "## 🛡️ Trivy vulnerability scan"
+            echo ""
+            echo "**Image:** \`${{ inputs.image }}\`"
+            echo ""
+            echo "**Severities scanned:** \`${{ inputs.severity_threshold }}\`"
+            echo ""
+            if [ "$total" = "0" ]; then
+              echo "✅ No vulnerabilities found for the selected severity thresholds."
+            else
+              echo "### Summary"
+              echo ""
+              echo "| Severity | Count |"
+              echo "| --- | ---: |"
+              for sev in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
+                c=$(jq --arg s "$sev" '[.Results[]?.Vulnerabilities // [] | .[] | select(.Severity==$s)] | length' "$report")
+                if [ "$c" -gt 0 ]; then echo "| $sev | $c |"; fi
+              done
+              echo ""
+              echo "<details><summary>View ${total} vulnerabilities</summary>"
+              echo ""
+              echo "| Severity | Vulnerability | Package | Installed | Fixed | Title |"
+              echo "| --- | --- | --- | --- | --- | --- |"
+              jq -r '
+                def rank: {"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3,"UNKNOWN":4}[.] // 5;
+                [ .Results[]? | .Vulnerabilities // [] | .[] ]
+                | sort_by(.Severity | rank)
+                | .[]
+                | "| \(.Severity) | [\(.VulnerabilityID)](\(.PrimaryURL // "#")) | \(.PkgName) | \(.InstalledVersion // "-") | \(.FixedVersion // "-") | \((.Title // "") | gsub("[|\n]"; " ")) |"
+              ' "$report"
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload trivy report as a Github artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
-          path: 'trivy-scan-results.sarif'
+          path: |
+            trivy-scan-results.json
+            trivy-scan-results.sarif
           retention-days: 5
 
       - name: Upload Trivy scan results to GitHub Security tab
+        if: inputs.upload_to_security_tab == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
             sarif_file: 'trivy-scan-results.sarif'
