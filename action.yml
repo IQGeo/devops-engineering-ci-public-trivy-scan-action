@@ -42,7 +42,7 @@ runs:
         uses: actions/checkout@main
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: '${{ inputs.image }}'
           scan-type: image
