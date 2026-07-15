@@ -6,7 +6,7 @@ Public repo holding a reusable composite action, called from product pipelines, 
 
 The image is scanned once and the results are surfaced in three ways:
 
-1. **Job summary (readable in GitHub)** – a Markdown report is written to the workflow run's summary page: per-severity counts plus a collapsible table with **clickable CVE links**, affected package, installed version and fixed version. Results can be reviewed and acted on directly in GitHub without downloading the artifact or opening a third-party tool.
+1. **Job summary (readable in GitHub)** – a Markdown report is written to the workflow run's summary page: an at-a-glance per-severity count table, followed by a section per severity (with a clear heading). Within each severity, findings are grouped under the **location** where they were detected (`PkgPath`, falling back to the scan target), shown SARIF-style above a details table with **clickable CVE links**, package, installed version, fixed version and title. Results can be reviewed and acted on directly in GitHub without downloading the artifact or opening a third-party tool.
 2. **SARIF upload to the Security tab (optional)** – when `upload_to_security_tab` is `true`, results are uploaded via `github/codeql-action/upload-sarif` so they appear as tracked code scanning alerts. This requires **GitHub Advanced Security** (GHAS); it is disabled by default because the upload fails on repos without GHAS.
 3. **Artifacts** – both the raw JSON (`trivy-scan-results.json`) and SARIF (`trivy-scan-results.sarif`) reports are uploaded as the `trivy-report` artifact for use in third-party tooling.
 

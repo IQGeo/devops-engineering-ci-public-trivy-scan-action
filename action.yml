@@ -114,19 +114,30 @@ runs:
                 if [ "$c" -gt 0 ]; then echo "| $sev | $c |"; fi
               done
               echo ""
-              echo "<details><summary>View ${total} vulnerabilities</summary>"
-              echo ""
-              echo "| Severity | Vulnerability | Package | Installed | Fixed | Title |"
-              echo "| --- | --- | --- | --- | --- | --- |"
               jq -r '
                 def rank: {"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3,"UNKNOWN":4}[.] // 5;
-                [ .Results[]? | .Vulnerabilities // [] | .[] ]
-                | sort_by(.Severity | rank)
+                def icon: {"CRITICAL":"🟣","HIGH":"🔴","MEDIUM":"🟠","LOW":"🟡","UNKNOWN":"⚪"}[.] // "⚪";
+                [ .Results[]? as $r | ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-")} ]
+                | group_by(.Severity)
+                | sort_by(.[0].Severity | rank)
                 | .[]
-                | "| \(.Severity) | [\(.VulnerabilityID)](\(.PrimaryURL // "#")) | \(.PkgName) | \(.InstalledVersion // "-") | \(.FixedVersion // "-") | \((.Title // "") | gsub("[|\n]"; " ")) |"
+                | ( .[0].Severity ) as $sev
+                | ( if ($sev == "CRITICAL" or $sev == "HIGH") then " open" else "" end ) as $open
+                | "<details\($open)><summary>\($sev | icon) <b>\($sev)</b> (\(length))</summary>",
+                  "",
+                  ( group_by(.Location)
+                    | .[]
+                    | ( .[0].Location ) as $loc
+                    | "**Location:** `\($loc)`",
+                      "",
+                      "| Vulnerability | Package | Installed | Fixed | Title |",
+                      "| --- | --- | --- | --- | --- |",
+                      ( .[] | "| [\(.VulnerabilityID)](\(.PrimaryURL // "#")) | \(.PkgName) | \(.InstalledVersion // "-") | \(.FixedVersion // "-") | \((.Title // "") | gsub("[|\n]"; " ")) |" ),
+                      ""
+                  ),
+                  "</details>",
+                  ""
               ' "$report"
-              echo ""
-              echo "</details>"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
