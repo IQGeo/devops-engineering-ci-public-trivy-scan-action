@@ -94,7 +94,7 @@ runs:
         shell: bash
         run: |
           report=trivy-scan-results.json
-          total=$(jq '[.Results[]?.Vulnerabilities // [] | length] | add // 0' "$report")
+          total=$(jq '[.Results[]? | ((.Vulnerabilities // []) | length) + ((.Secrets // []) | length)] | add // 0' "$report")
           {
             echo "## 🛡️ Trivy vulnerability scan"
             echo ""
@@ -110,7 +110,7 @@ runs:
               echo "| Severity | Count |"
               echo "| --- | ---: |"
               for sev in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
-                c=$(jq --arg s "$sev" '[.Results[]?.Vulnerabilities // [] | .[] | select(.Severity==$s)] | length' "$report")
+                c=$(jq --arg s "$sev" '[.Results[]? | ((.Vulnerabilities // [])[]?, (.Secrets // [])[]?) | select(.Severity==$s)] | length' "$report")
                 if [ "$c" -gt 0 ]; then echo "| $sev | $c |"; fi
               done
               echo ""
@@ -118,7 +118,16 @@ runs:
                 def rank: {"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3,"UNKNOWN":4}[.] // 5;
                 def icon: {"CRITICAL":"🟣","HIGH":"🔴","MEDIUM":"🟠","LOW":"🟡","UNKNOWN":"⚪"}[.] // "⚪";
                 def htmlesc: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
-                [ .Results[]? as $r | ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-")} ]
+                def splitloc:
+                  ( . / "/" ) as $parts
+                  | if ($parts | length) > 1
+                    then {path: ($parts[0:-1] | join("/")), indicator: $parts[-1]}
+                    else {path: ., indicator: null}
+                    end;
+                [ .Results[]? as $r |
+                  ( ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-")} ),
+                  ( ($r.Secrets // [])[] | . + {VulnerabilityID: (.RuleID // "secret"), PkgName: "-", InstalledVersion: "-", FixedVersion: "-", PrimaryURL: null, Location: ($r.Target // "-")} )
+                ]
                 | group_by(.Severity)
                 | sort_by(.[0].Severity | rank)
                 | .[]
@@ -132,8 +141,8 @@ runs:
                   "<tbody>",
                   ( group_by(.Location)
                     | .[]
-                    | ( .[0].Location ) as $loc
-                    | "<tr><td colspan=\"5\">Location: <code>\($loc | htmlesc)</code></td></tr>",
+                    | ( .[0].Location | splitloc ) as $sl
+                    | "<tr><td colspan=\"5\">📁 <code>\($sl.path | htmlesc)</code>" + (if $sl.indicator then " <sub>(detected via \($sl.indicator | htmlesc))</sub>" else "" end) + "</td></tr>",
                       ( .[] | "<tr><td><a href=\"\(.PrimaryURL // "#")\">\(.VulnerabilityID | htmlesc)</a></td><td>\(.PkgName | htmlesc)</td><td>\(.InstalledVersion // "-" | htmlesc)</td><td>\(.FixedVersion // "-" | htmlesc)</td><td>\((.Title // "") | gsub("[\\r\\n]"; " ") | htmlesc)</td></tr>" )
                   ),
                   "</tbody>",
