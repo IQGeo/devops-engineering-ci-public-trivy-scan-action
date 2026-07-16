@@ -124,9 +124,14 @@ runs:
                     then {path: ($parts[0:-1] | join("/")), indicator: $parts[-1]}
                     else {path: ., indicator: null}
                     end;
+                def renderRows:
+                  group_by(.Location)[]
+                  | ( .[0].Location | splitloc ) as $sl
+                  | "<tr><td colspan=\"5\">📁 <code>\($sl.path | htmlesc)</code>" + (if $sl.indicator then " <sub>(detected via \($sl.indicator | htmlesc))</sub>" else "" end) + "</td></tr>",
+                    ( .[] | "<tr><td><a href=\"\(.PrimaryURL // "#")\">\(.VulnerabilityID | htmlesc)</a></td><td>\(.PkgName | htmlesc)</td><td>\(.InstalledVersion // "-" | htmlesc)</td><td>\(.FixedVersion // "-" | htmlesc)</td><td>\((.Title // "") | gsub("[\\r\\n]"; " ") | htmlesc)</td></tr>" );
                 [ .Results[]? as $r |
-                  ( ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-")} ),
-                  ( ($r.Secrets // [])[] | . + {VulnerabilityID: (.RuleID // "secret"), PkgName: "-", InstalledVersion: "-", FixedVersion: "-", PrimaryURL: null, Location: ($r.Target // "-")} )
+                  ( ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-"), Kind: "vuln"} ),
+                  ( ($r.Secrets // [])[] | . + {VulnerabilityID: (.RuleID // "secret"), PkgName: "-", InstalledVersion: "-", FixedVersion: "-", PrimaryURL: null, Location: ($r.Target // "-"), Kind: "secret"} )
                 ]
                 | group_by(.Severity)
                 | sort_by(.[0].Severity | rank)
@@ -134,17 +139,15 @@ runs:
                 | ( .[0].Severity ) as $sev
                 | ( length ) as $count
                 | ( if ($sev == "CRITICAL" or $sev == "HIGH") then " open" else "" end ) as $open
+                | ( map(select(.Kind == "vuln")) ) as $vulns
+                | ( map(select(.Kind == "secret")) ) as $secrets
                 | "<details\($open)><summary>\($sev | icon) <b>\($sev)</b> (\($count))</summary>",
                   "",
                   "<table>",
                   "<thead><tr><th>Vulnerability</th><th>Package</th><th>Installed</th><th>Fixed</th><th>Title</th></tr></thead>",
                   "<tbody>",
-                  ( group_by(.Location)
-                    | .[]
-                    | ( .[0].Location | splitloc ) as $sl
-                    | "<tr><td colspan=\"5\">📁 <code>\($sl.path | htmlesc)</code>" + (if $sl.indicator then " <sub>(detected via \($sl.indicator | htmlesc))</sub>" else "" end) + "</td></tr>",
-                      ( .[] | "<tr><td><a href=\"\(.PrimaryURL // "#")\">\(.VulnerabilityID | htmlesc)</a></td><td>\(.PkgName | htmlesc)</td><td>\(.InstalledVersion // "-" | htmlesc)</td><td>\(.FixedVersion // "-" | htmlesc)</td><td>\((.Title // "") | gsub("[\\r\\n]"; " ") | htmlesc)</td></tr>" )
-                  ),
+                  ( $vulns | renderRows ),
+                  ( $secrets | renderRows ),
                   "</tbody>",
                   "</table>",
                   "",
