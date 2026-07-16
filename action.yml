@@ -117,24 +117,28 @@ runs:
               jq -r '
                 def rank: {"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3,"UNKNOWN":4}[.] // 5;
                 def icon: {"CRITICAL":"🟣","HIGH":"🔴","MEDIUM":"🟠","LOW":"🟡","UNKNOWN":"⚪"}[.] // "⚪";
+                def htmlesc: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
                 [ .Results[]? as $r | ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-")} ]
                 | group_by(.Severity)
                 | sort_by(.[0].Severity | rank)
                 | .[]
                 | ( .[0].Severity ) as $sev
+                | ( length ) as $count
                 | ( if ($sev == "CRITICAL" or $sev == "HIGH") then " open" else "" end ) as $open
-                | "<details\($open)><summary>\($sev | icon) <b>\($sev)</b> (\(length))</summary>",
+                | "<details\($open)><summary>\($sev | icon) <b>\($sev)</b> (\($count))</summary>",
                   "",
+                  "<table>",
+                  "<thead><tr><th>Vulnerability</th><th>Package</th><th>Installed</th><th>Fixed</th><th>Title</th></tr></thead>",
+                  "<tbody>",
                   ( group_by(.Location)
                     | .[]
                     | ( .[0].Location ) as $loc
-                    | "**Location:** `\($loc)`",
-                      "",
-                      "| Vulnerability | Package | Installed | Fixed | Title |",
-                      "| --- | --- | --- | --- | --- |",
-                      ( .[] | "| [\(.VulnerabilityID)](\(.PrimaryURL // "#")) | \(.PkgName) | \(.InstalledVersion // "-") | \(.FixedVersion // "-") | \((.Title // "") | gsub("[|\n]"; " ")) |" ),
-                      ""
+                    | "<tr><td colspan=\"5\">Location: <code>\($loc | htmlesc)</code></td></tr>",
+                      ( .[] | "<tr><td><a href=\"\(.PrimaryURL // "#")\">\(.VulnerabilityID | htmlesc)</a></td><td>\(.PkgName | htmlesc)</td><td>\(.InstalledVersion // "-" | htmlesc)</td><td>\(.FixedVersion // "-" | htmlesc)</td><td>\((.Title // "") | gsub("[\\r\\n]"; " ") | htmlesc)</td></tr>" )
                   ),
+                  "</tbody>",
+                  "</table>",
+                  "",
                   "</details>",
                   ""
               ' "$report"
