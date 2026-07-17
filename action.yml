@@ -10,11 +10,6 @@ inputs:
     required: false
     default: 'MEDIUM,CRITICAL,HIGH'
     type: string
-  format:
-    description: 'Deprecated / unused. Reports are always produced as JSON, SARIF, and a Markdown job summary.'
-    required: false
-    default: 'sarif'
-    type: string
   upload_to_security_tab:
     description: 'Upload SARIF results to the GitHub Security tab (requires GitHub Advanced Security). Set to "true" to enable.'
     required: false
@@ -92,70 +87,12 @@ runs:
 
       - name: Render Trivy results to the job summary
         shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+          REPORT: trivy-scan-results.json
         run: |
-          report=trivy-scan-results.json
-          total=$(jq '[.Results[]? | ((.Vulnerabilities // []) | length) + ((.Secrets // []) | length)] | add // 0' "$report")
-          {
-            echo "## 🛡️ Trivy vulnerability scan"
-            echo ""
-            echo "**Image:** \`${{ inputs.image }}\`"
-            echo ""
-            echo "**Severities scanned:** \`${{ inputs.severity_threshold }}\`"
-            echo ""
-            if [ "$total" = "0" ]; then
-              echo "✅ No vulnerabilities found for the selected severity thresholds."
-            else
-              echo "### Summary"
-              echo ""
-              echo "| Severity | Count |"
-              echo "| --- | ---: |"
-              for sev in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
-                c=$(jq --arg s "$sev" '[.Results[]? | ((.Vulnerabilities // [])[]?, (.Secrets // [])[]?) | select(.Severity==$s)] | length' "$report")
-                if [ "$c" -gt 0 ]; then echo "| $sev | $c |"; fi
-              done
-              echo ""
-              jq -r '
-                def rank: {"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3,"UNKNOWN":4}[.] // 5;
-                def icon: {"CRITICAL":"🟣","HIGH":"🔴","MEDIUM":"🟠","LOW":"🟡","UNKNOWN":"⚪"}[.] // "⚪";
-                def htmlesc: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
-                def splitloc:
-                  ( . / "/" ) as $parts
-                  | if ($parts | length) > 1
-                    then {path: ($parts[0:-1] | join("/")), indicator: $parts[-1]}
-                    else {path: ., indicator: null}
-                    end;
-                def renderRows:
-                  group_by(.Location)[]
-                  | ( .[0].Location | splitloc ) as $sl
-                  | "<tr><td colspan=\"5\">📁 <code>\($sl.path | htmlesc)</code>" + (if $sl.indicator then " <sub>(detected via \($sl.indicator | htmlesc))</sub>" else "" end) + "</td></tr>",
-                    ( .[] | "<tr><td><a href=\"\(.PrimaryURL // "#")\" target=\"_blank\" rel=\"noopener noreferrer\">\(.VulnerabilityID | htmlesc)</a></td><td>\(.PkgName | htmlesc)</td><td>\(.InstalledVersion // "-" | htmlesc)</td><td>\(.FixedVersion // "-" | htmlesc)</td><td>\((.Title // "") | gsub("[\\r\\n]"; " ") | htmlesc)</td></tr>" );
-                [ .Results[]? as $r |
-                  ( ($r.Vulnerabilities // [])[] | . + {Location: (.PkgPath // $r.Target // "-"), Kind: "vuln"} ),
-                  ( ($r.Secrets // [])[] | . + {VulnerabilityID: (.RuleID // "secret"), PkgName: "-", InstalledVersion: "-", FixedVersion: "-", PrimaryURL: null, Location: ($r.Target // "-"), Kind: "secret"} )
-                ]
-                | group_by(.Severity)
-                | sort_by(.[0].Severity | rank)
-                | .[]
-                | ( .[0].Severity ) as $sev
-                | ( length ) as $count
-                | ( if ($sev == "CRITICAL" or $sev == "HIGH") then " open" else "" end ) as $open
-                | ( map(select(.Kind == "vuln")) ) as $vulns
-                | ( map(select(.Kind == "secret")) ) as $secrets
-                | "<details\($open)><summary>\($sev | icon) <b>\($sev)</b> (\($count))</summary>",
-                  "",
-                  "<table>",
-                  "<thead><tr><th>Vulnerability</th><th>Package</th><th>Installed</th><th>Fixed</th><th>Title</th></tr></thead>",
-                  "<tbody>",
-                  ( $vulns | renderRows ),
-                  ( $secrets | renderRows ),
-                  "</tbody>",
-                  "</table>",
-                  "",
-                  "</details>",
-                  ""
-              ' "$report"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          bash "${{ github.action_path }}/scripts/render-summary.sh" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload trivy report as a Github artifact
         uses: actions/upload-artifact@v4
