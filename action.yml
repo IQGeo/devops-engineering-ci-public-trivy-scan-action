@@ -1,0 +1,110 @@
+name: 'Reusable composite action for Trivy vulnerability scanning'
+description: 'Performs vulnerability scanning on container images using Trivy and uploads the results as an artifact.'
+inputs:
+  image:
+    description: 'Container image to scan'
+    required: true
+    type: string
+  severity_threshold:
+    description: 'Vulnerability severity threshold (LOW, MEDIUM, HIGH, CRITICAL)'
+    required: false
+    default: 'MEDIUM,CRITICAL,HIGH'
+    type: string
+  upload_to_security_tab:
+    description: 'Upload SARIF results to the GitHub Security tab (requires GitHub Advanced Security). Set to "true" to enable.'
+    required: false
+    default: 'false'
+    type: string
+  registry_username:
+    description: 'ACR registry username'
+    required: true
+    type: string
+  registry_password:
+    description: 'ACR registry password'
+    required: true
+    type: string
+  token:
+    description: 'GitHub token for authentication'
+    required: true
+    type: string
+
+
+runs:
+    using: "composite"
+    steps:
+
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: '${{ inputs.image }}'
+          scan-type: image
+          format: 'json'
+          output: 'trivy-scan-results.json'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: '${{ inputs.severity_threshold }}'
+          github-pat: '${{ inputs.token }}'
+          timeout: '15m'
+        env:
+          TRIVY_USERNAME: ${{ inputs.registry_username }}
+          TRIVY_PASSWORD: ${{ inputs.registry_password }}
+
+      - name: Convert Trivy report to SARIF
+        shell: bash
+        run: |
+          trivy convert \
+            --format sarif \
+            --output trivy-scan-results.sarif \
+            trivy-scan-results.json
+
+      - name: Ensure jq is available
+        shell: bash
+        run: |
+          if command -v jq >/dev/null 2>&1; then
+            echo "jq already installed: $(jq --version)"
+            exit 0
+          fi
+          echo "jq not found; attempting to install..."
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif command -v apk >/dev/null 2>&1; then
+            sudo apk add --no-cache jq || apk add --no-cache jq
+          elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y jq
+          elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y jq
+          elif command -v brew >/dev/null 2>&1; then
+            brew install jq
+          else
+            echo "::error::jq is required for the job summary but no supported package manager was found to install it." >&2
+            exit 1
+          fi
+          echo "jq installed: $(jq --version)"
+
+      - name: Render Trivy results to the job summary
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+          REPORT: trivy-scan-results.json
+        run: |
+          bash "${{ github.action_path }}/scripts/render-summary.sh" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload trivy report as a Github artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: |
+            trivy-scan-results.json
+            trivy-scan-results.sarif
+          retention-days: 5
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: inputs.upload_to_security_tab == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+            sarif_file: 'trivy-scan-results.sarif'
